@@ -1,0 +1,189 @@
+"""Overview & Upload page: hero, decision cards, expected schema, uploader.
+
+Owner: P1 (Drenusha)
+
+`render_home()` draws the landing page. On a successful upload it stores the
+validated data in st.session_state so the slide pages (and the sidebar
+status) can use it:
+    st.session_state["file_bytes"] — raw xlsx bytes for load_and_clean()
+    st.session_state["sheets"]     — validated {sheet_name: DataFrame}
+    st.session_state["valid_file"] — {"name", "rows", "sheets"} for the sidebar
+"""
+from __future__ import annotations
+
+import pandas as pd
+import streamlit as st
+
+from pipeline.validate import (
+    EXPECTED_COLUMNS,
+    SCHEMA_ERROR_HEADER,
+    read_workbook,
+    validate_extension,
+    validate_workbook,
+)
+from ui.theme import ACCENTS
+
+_DECISION_CARDS = [
+    (
+        "pulse",
+        "💓",
+        "How did we do?",
+        "Monthly revenue trend with MoM % and YoY % vs last year.",
+        "Stock and staffing for next month.",
+    ),
+    (
+        "engines",
+        "🚀",
+        "What's driving the month?",
+        "Top products by revenue and top-value markets.",
+        "What to promote, and who is VIP.",
+    ),
+    (
+        "leaks",
+        "🔍",
+        "Where is money leaking?",
+        "Returns, return rate % and revenue concentration.",
+        "What to investigate, who to call.",
+    ),
+]
+
+
+def render_home() -> None:
+    """Render the Overview & Upload page."""
+    st.markdown(
+        '<div class="hero-title">Automated Monthly Sales Report</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="hero-sub">Upload the month\'s sales file and get a decision-ready '
+        "report in seconds — three slides, three decisions, zero spreadsheets.</div>",
+        unsafe_allow_html=True,
+    )
+
+    cols = st.columns(3, gap="medium")
+    for col, (key, emoji, question, see, decision) in zip(cols, _DECISION_CARDS):
+        with col:
+            st.markdown(
+                f'<div class="dec-card" style="--accent:{ACCENTS[key]}">'
+                f'<span class="dec-emoji">{emoji}</span>'
+                f'<div class="dec-q">{question}</div>'
+                f'<div class="dec-see">{see}</div>'
+                f'<div class="dec-label">You decide</div>'
+                f'<div class="dec-text">{decision}</div></div>',
+                unsafe_allow_html=True,
+            )
+            if st.button("Open slide →", key=f"open_{key}", use_container_width=True):
+                st.session_state.page = key
+                st.rerun()
+
+    st.write("")
+
+    with st.expander("📋 What should the file look like? (expected schema)"):
+        st.dataframe(
+            pd.DataFrame(
+                {
+                    "Column": EXPECTED_COLUMNS,
+                    "Type": ["text", "text", "text", "number", "date", "number", "number", "text"],
+                    "Example": [
+                        "489434",
+                        "85048",
+                        "15CM CHRISTMAS GLASS BALL 20 LIGHTS",
+                        "12",
+                        "2009-12-01 07:45",
+                        "6.95",
+                        "13085",
+                        "United Kingdom",
+                    ],
+                }
+            ),
+            hide_index=True,
+            use_container_width=True,
+        )
+        st.caption("Every sheet in the workbook must have exactly these columns.")
+
+    uploaded = st.file_uploader(
+        "**Upload the sales file (.xlsx)**",
+        type=["xlsx"],
+        accept_multiple_files=False,
+        help="Only the .xlsx format is accepted. The schema must match the table above.",
+    )
+
+    if uploaded is None:
+        file_info = st.session_state.get("valid_file")
+        if file_info:
+            st.success(
+                f'📄 **{file_info["name"]}** is loaded — open the slides from the sidebar. '
+                "Upload a new file any time to refresh the report."
+            )
+        else:
+            st.info("⬆️ Upload an .xlsx file to generate the report.")
+        return
+
+    errors = validate_extension(uploaded.name)
+    sheets: dict[str, pd.DataFrame] = {}
+
+    if not errors:
+        with st.spinner("Reading the file..."):
+            try:
+                sheets = read_workbook(uploaded.getvalue())
+            except Exception:
+                errors = [
+                    "The file could not be read as xlsx — it may be corrupted "
+                    "or saved in a different format."
+                ]
+        if not errors:
+            errors = validate_workbook(sheets)
+
+    if errors:
+        st.error(
+            f"**{SCHEMA_ERROR_HEADER}**\n\n"
+            + "\n".join(f"- {e}" for e in errors)
+            + "\n\nFix the file to match the schema above and try again."
+        )
+        return
+
+    total_rows = sum(len(df) for df in sheets.values())
+    st.session_state["file_bytes"] = uploaded.getvalue()
+    st.session_state["sheets"] = sheets
+    st.session_state["valid_file"] = {
+        "name": uploaded.name,
+        "rows": total_rows,
+        "sheets": len(sheets),
+    }
+
+    st.success(f"✅ **{uploaded.name}** validated successfully — your report is ready.")
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Rows of sales data", f"{total_rows:,}")
+    m2.metric("Period covered", _period_covered(sheets))
+    m3.metric("Markets", _market_count(sheets))
+
+    with st.expander("👀 Peek at the first rows"):
+        st.dataframe(
+            next(iter(sheets.values())).head(5),
+            hide_index=True,
+            use_container_width=True,
+        )
+
+    st.info("⬅️ Open the three slides from the sidebar — or with the buttons above.")
+
+
+def _period_covered(sheets: dict[str, pd.DataFrame]) -> str:
+    """'Dec 2009 – Dec 2011' across all sheets; '—' if dates can't be read."""
+    try:
+        dates = pd.concat(
+            [pd.to_datetime(df["InvoiceDate"], errors="coerce", format="mixed") for df in sheets.values()]
+        ).dropna()
+        if dates.empty:
+            return "—"
+        return f"{dates.min():%b %Y} – {dates.max():%b %Y}"
+    except Exception:
+        return "—"
+
+
+def _market_count(sheets: dict[str, pd.DataFrame]) -> str:
+    try:
+        countries = pd.concat([df["Country"] for df in sheets.values()]).dropna()
+        return f"{countries.nunique()}"
+    except Exception:
+        return "—"
