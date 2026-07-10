@@ -38,6 +38,10 @@ try it with `sample_data/demo_bad_schema.xlsx`.
 
 ```
 ├── app.py                  # main UI — orchestration only
+├── ui/
+│   ├── welcome.py          # Overview & Upload page: instructions, schema, uploader (P1)
+│   ├── sidebar.py          # sidebar navigation buttons + file status (P1)
+│   └── theme.py            # shared CSS look & feel (P1)
 ├── pipeline/
 │   ├── validate.py         # step 0: schema validation (P1)
 │   ├── clean.py            # steps 1-4: duplicates, returns split, filters, Revenue (P2+P3)

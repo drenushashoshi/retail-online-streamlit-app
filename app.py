@@ -1,22 +1,25 @@
 """Automated sales report — Team Squirtle.
 
-app.py only orchestrates; the logic lives in pipeline/ and slides/.
-This version contains P1's slice (welcome page + uploader + validation).
-The P2-P5 sections get wired up in the integration session — see the
-TODO notes below.
+app.py only orchestrates — every page lives in its own module and is
+reached with the sidebar buttons:
+- ui/welcome.py      (P1) Overview & Upload: validation + file status
+- slides/pulse.py    (P3) Business Pulse
+- slides/engines.py  (P4) Revenue Engines
+- slides/leaks.py    (P5) Leaks & Key Customers
+
+The slide pages already call the real contracts — as soon as
+load_and_clean() (P2+P3) and the slide_*() functions are implemented,
+the slides light up without touching this file.
 """
 from __future__ import annotations
 
-import pandas as pd
 import streamlit as st
 
-from pipeline.validate import (
-    EXPECTED_COLUMNS,
-    SCHEMA_ERROR_HEADER,
-    read_workbook,
-    validate_extension,
-    validate_workbook,
-)
+from pipeline.clean import load_and_clean
+from slides import slide_engines, slide_leaks, slide_pulse
+from ui.sidebar import render_sidebar
+from ui.theme import ACCENTS, inject_css
+from ui.welcome import render_home
 
 st.set_page_config(
     page_title="Sales Report — Squirtle",
@@ -24,110 +27,58 @@ st.set_page_config(
     layout="wide",
 )
 
-# ---------------------------------------------------------------------------
-# P1 — Welcome page: instructions, expected schema, uploader, error display
-# ---------------------------------------------------------------------------
+_SLIDES = {
+    "pulse": (
+        "💓 Business Pulse",
+        "How did we do — and what's coming? Monthly revenue with MoM % and YoY %.",
+        "Decides: stock & staffing for next month",
+        lambda data: slide_pulse(data[0]),
+    ),
+    "engines": (
+        "🚀 Revenue Engines",
+        "What's driving the month? Top products by revenue and the highest-value markets.",
+        "Decides: what to promote & who gets VIP treatment",
+        lambda data: slide_engines(data[0]),
+    ),
+    "leaks": (
+        "🔍 Leaks & Key Customers",
+        "Where is money leaking? Returns, return rate % and customer concentration.",
+        "Decides: what to investigate & who to call",
+        lambda data: slide_leaks(data[0], data[1]),
+    ),
+}
 
-st.title("📊 Automated Monthly Sales Report")
-st.caption("Team Squirtle · Dataset: Online Retail II")
 
-st.markdown(
-    """
-**How it works** — three steps:
+def _render_slide_page(key: str) -> None:
+    title, description, decision, render = _SLIDES[key]
+    st.title(title)
+    st.caption(description)
+    st.markdown(
+        f'<span class="decision-chip" style="--accent:{ACCENTS[key]}">🎯 {decision}</span>',
+        unsafe_allow_html=True,
+    )
 
-1. **Upload** the sales file in **.xlsx** format (only xlsx is accepted).
-2. The app **validates the schema** — if something doesn't match, you see exactly what.
-3. Scroll down to see **three slides** with the numbers, charts, and insights for decision-making.
-"""
-)
+    if "file_bytes" not in st.session_state:
+        st.info("⬅️ Upload and validate the sales file on **Overview & Upload** first.")
+        return
 
-with st.expander("📋 Expected file schema (every sheet)", expanded=False):
-    st.table(
-        pd.DataFrame(
-            {
-                "Column": EXPECTED_COLUMNS,
-                "Type": [
-                    "text",
-                    "text",
-                    "text",
-                    "number",
-                    "date",
-                    "number",
-                    "number",
-                    "text",
-                ],
-                "Example": [
-                    "489434",
-                    "85048",
-                    "15CM CHRISTMAS GLASS BALL 20 LIGHTS",
-                    "12",
-                    "2009-12-01 07:45",
-                    "6.95",
-                    "13085",
-                    "United Kingdom",
-                ],
-            }
+    try:
+        df_sales, df_returns, log, errors = load_and_clean(st.session_state["file_bytes"])
+        render((df_sales, df_returns))
+    except NotImplementedError as todo:
+        st.markdown(
+            '<div class="ph-card"><div class="ph-emoji">🏗️</div>'
+            '<div class="ph-title">This slide is on its way</div>'
+            f'<div class="ph-text">{description}</div>'
+            f'<span class="owner-chip">{todo}</span></div>',
+            unsafe_allow_html=True,
         )
-    )
 
-uploaded = st.file_uploader(
-    "Upload the sales file (.xlsx)",
-    type=["xlsx"],
-    accept_multiple_files=False,
-    help="Only the .xlsx format is accepted. The schema must match the table above.",
-)
 
-if uploaded is None:
-    st.info("⬆️ Upload an .xlsx file to generate the report.")
-    st.stop()
+inject_css()
+page = render_sidebar()
 
-errors = validate_extension(uploaded.name)
-sheets: dict[str, pd.DataFrame] = {}
-
-if not errors:
-    with st.spinner("Reading the file..."):
-        try:
-            sheets = read_workbook(uploaded.getvalue())
-        except Exception:
-            errors = [
-                "The file could not be read as xlsx — it may be corrupted "
-                "or saved in a different format."
-            ]
-    if not errors:
-        errors = validate_workbook(sheets)
-
-if errors:
-    st.error(
-        f"**{SCHEMA_ERROR_HEADER}**\n\n"
-        + "\n".join(f"- {e}" for e in errors)
-        + "\n\nFix the file to match the schema above and try again."
-    )
-    st.stop()
-
-total_rows = sum(len(df) for df in sheets.values())
-st.success(
-    f"✅ File validated successfully — {total_rows:,} rows "
-    f"across {len(sheets)} sheet(s). Preparing the report..."
-)
-
-# ---------------------------------------------------------------------------
-# Integration session (Wednesday ~16:00) — the P2-P5 steps get wired here.
-# Contracts: load_and_clean(bytes) -> (df_sales, df_returns, log, errors)
-#            slide_pulse(df_sales) / slide_engines(df_sales) / slide_leaks(df_sales, df_returns)
-# ---------------------------------------------------------------------------
-
-st.divider()
-st.subheader("📈 Key KPIs")
-st.info("🔜 P2 — KPI row with MoM deltas: Revenue, orders, items, average order value, unique customers.")
-
-st.divider()
-st.subheader("Slide 1 — Business Pulse")
-st.info("🔜 P3 — monthly revenue line + MoM % + YoY %.")
-
-st.divider()
-st.subheader("Slide 2 — Revenue Engines")
-st.info("🔜 P4 — top products and markets with average revenue per order.")
-
-st.divider()
-st.subheader("Slide 3 — Leaks & Key Customers")
-st.info("🔜 P5 — returns, return rate %, and customer concentration.")
+if page == "home":
+    render_home()
+else:
+    _render_slide_page(page)
