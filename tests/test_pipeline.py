@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from pipeline.clean import split_returns
 from pipeline.validate import (
     EXPECTED_COLUMNS,
     validate_extension,
@@ -131,3 +132,84 @@ def test_numeric_invoicedate_rejected():
 
 def test_expected_schema_has_8_columns():
     assert len(EXPECTED_COLUMNS) == 8
+
+
+# --- split_returns: cleaning (P2) ------------------------------------------
+
+
+def test_split_returns_strips_column_whitespace():
+    df = make_valid_df().rename(columns={"Invoice": " Invoice ", "Country": " Country "})
+
+    sales_raw, returns = split_returns(df)
+
+    assert "Invoice" in sales_raw.columns
+    assert "Country" in sales_raw.columns
+    assert " Invoice " not in sales_raw.columns
+    assert " Country " not in sales_raw.columns
+    assert "Invoice" in returns.columns
+
+
+def test_split_returns_drops_exact_duplicates_before_split():
+    df = pd.concat([make_valid_df(), make_valid_df()], ignore_index=True)
+
+    sales_raw, returns = split_returns(df)
+
+    assert len(sales_raw) == 1
+    assert len(returns) == 1
+
+
+def test_split_returns_preserves_total_rows_after_duplicate_removal():
+    df = pd.concat([make_valid_df(), make_valid_df(), make_valid_df().iloc[[0]]], ignore_index=True)
+    df_after_duplicates_removed = df.copy().drop_duplicates()
+
+    sales_raw, df_returns = split_returns(df)
+
+    assert len(sales_raw) + len(df_returns) == len(df_after_duplicates_removed)
+
+
+def test_split_returns_moves_c_invoices_to_returns_dataframe():
+    sales_raw, df_returns = split_returns(make_valid_df())
+
+    assert sales_raw["Invoice"].tolist() == ["489434"]
+    assert df_returns["Invoice"].tolist() == ["C489449"]
+
+
+def test_split_returns_keeps_non_c_invoices_as_sales():
+    df = make_valid_df()
+    df["Invoice"] = ["489434", "489435"]
+
+    sales_raw, returns = split_returns(df)
+
+    assert sales_raw["Invoice"].tolist() == ["489434", "489435"]
+    assert returns.empty
+
+
+def test_split_returns_numeric_invoice_values_do_not_crash():
+    df = make_valid_df()
+    df["Invoice"] = [489434, 489435]
+
+    sales_raw, returns = split_returns(df)
+
+    assert sales_raw["Invoice"].tolist() == [489434, 489435]
+    assert returns.empty
+
+
+def test_split_returns_missing_invoice_column_raises_clear_valueerror():
+    df = make_valid_df().drop(columns=["Invoice"])
+
+    try:
+        split_returns(df)
+        assert False, "Expected ValueError for missing Invoice column"
+    except ValueError as exc:
+        assert 'Missing required column: "Invoice".' == str(exc)
+
+
+def test_split_returns_empty_dataframe_returns_empty_sales_and_returns():
+    df = make_valid_df().iloc[0:0]
+
+    sales_raw, returns = split_returns(df)
+
+    assert sales_raw.empty
+    assert returns.empty
+    assert sales_raw.columns.tolist() == EXPECTED_COLUMNS
+    assert returns.columns.tolist() == EXPECTED_COLUMNS
