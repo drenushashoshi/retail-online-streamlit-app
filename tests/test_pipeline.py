@@ -4,8 +4,9 @@ Here: step 0 tests (validation, P1).
 Run with: `python -m pytest` from the repo root.
 """
 from __future__ import annotations
-
+from pipeline.aggregate import monthly_revenue
 import pandas as pd
+import pytest
 
 from pipeline.clean import split_returns, clean_sales, load_and_clean
 from pipeline.validate import (
@@ -334,3 +335,52 @@ def test_load_and_clean_multi_sheet_deduplication_and_split():
     assert any("Total dropped duplicate rows" in entry[0] for entry in log)
     assert any("Total rows in returns after splitting" in entry[0] for entry in log)
     assert any("Total rows in sales after cleaning as final" in entry[0] for entry in log)
+
+# --- monthly_revenue: revenue aggregation -------------------------------------
+
+def test_monthly_revenue_happy_path():
+    # Arrange: Create 2 months of standard data exactly 1 year apart to test MoM and YoY
+    data = {
+        "InvoiceDate": [
+            pd.Timestamp("2025-01-15"), 
+            pd.Timestamp("2025-02-15"), 
+            pd.Timestamp("2026-01-15")
+        ],
+        "Revenue": [1000.0, 1500.0, 2000.0]
+    }
+    df = pd.DataFrame(data)
+
+    # Act
+    result = monthly_revenue(df)
+
+    # Assert
+    assert len(result) == 3
+    assert list(result.columns) == ["Month", "Revenue", "MoM %", "YoY %"]
+    
+    # Check Month 2 MoM calculation: ((1500 - 1000) / 1000) * 100 = 50%
+    assert result.loc[1, "MoM %"] == 50.0
+    
+    # Check Year 2 YoY calculation: ((2000 - 1000) / 1000) * 100 = 100%
+    assert result.loc[2, "YoY %"] == 100.0
+
+
+def test_monthly_revenue_empty_dataframe():
+    # Arrange
+    df_empty = pd.DataFrame(columns=["InvoiceDate", "Revenue"])
+
+    # Act
+    result = monthly_revenue(df_empty)
+
+    # Assert
+    assert isinstance(result, pd.DataFrame)
+    assert result.empty
+    assert list(result.columns) == ["Month", "Revenue", "MoM %", "YoY %"]
+
+
+def test_monthly_revenue_missing_columns():
+    # Arrange: Missing critical calculation column
+    df_broken = pd.DataFrame({"InvoiceDate": [pd.Timestamp("2025-01-15")]})
+
+    # Act & Assert: Ensure it raises a KeyError cleanly if the pipeline contract is broken
+    with pytest.raises(KeyError):
+        monthly_revenue(df_broken)
