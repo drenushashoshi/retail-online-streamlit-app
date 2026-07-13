@@ -36,11 +36,52 @@ def split_returns(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 def clean_sales(df: pd.DataFrame) -> tuple[pd.DataFrame, list[tuple[str, int]]]:
+
     """(P3) StockCode ^\\d{5} filter, Price>0 & Qty>0, Revenue column.
 
     Returns (df_sales, cleaning_log) where the log is [(step, rows_removed)].
+
     """
-    raise NotImplementedError("P3 — in progress")
+    cleaning_log = []
+    df_sales = df.copy()
+    initial_rows = len(df_sales)
+
+    # Casting to string to prevent regex conversion errors
+    df_sales["StockCode"] = df_sales["StockCode"].astype(str).str.strip()
+
+    # Keep only 5-digit standard stockcodes (e.g. 85123A is non-standard, M, D, POST are non-standard)
+    mask_stockcode = df_sales["StockCode"].str.match(r"^\d{5}", na=False)
+
+    # df_sales Dataframe with TRUE (allows to pass through) for rows with standard stockcodes and FALSE(completely dropped) for non-standard stockcodes, appending the changes into the cleaning_log list with the number of rows removed in this step.
+
+    df_sales = df_sales[mask_stockcode]
+    rows_after_stock = len(df_sales)
+    cleaning_log.append(
+        (
+            "Removed non-standard stockcodes (e.g M, D, POST)",
+
+            initial_rows - rows_after_stock
+        )
+    )
+    # Keep only positive prices and quantities
+    df_sales = df_sales[
+        (df_sales["Price"] > 0) & (df_sales["Quantity"] > 0)
+    ]
+
+    # Appending the changes into the cleaning_log list with the number of rows removed in this step.
+    rows_after_metrics = len(df_sales)
+    cleaning_log.append(
+        (
+            "Removed rows with non-positive Price or Quantity",
+
+            rows_after_stock - rows_after_metrics
+        )
+    )
+
+    # Revenue calculation
+    df_sales["Revenue"] = df_sales["Price"] * df_sales["Quantity"]
+
+    return df_sales, cleaning_log
 
 
 def load_and_clean(file_bytes: bytes):
