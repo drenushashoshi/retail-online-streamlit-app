@@ -30,7 +30,7 @@ def render_sidebar() -> str:
             if st.button(
                 f"{emoji} {label}",
                 key=f"nav_{key}",
-                use_container_width=True,
+                width="stretch",
                 type="primary" if active else "secondary",
             ):
                 st.session_state.page = key

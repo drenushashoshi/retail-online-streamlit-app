@@ -72,7 +72,7 @@ def render_home() -> None:
                 f'<div class="dec-text">{decision}</div></div>',
                 unsafe_allow_html=True,
             )
-            if st.button("Open slide →", key=f"open_{key}", use_container_width=True):
+            if st.button("Open slide →", key=f"open_{key}", width="stretch"):
                 st.session_state.page = key
                 st.rerun()
 
@@ -97,7 +97,7 @@ def render_home() -> None:
                 }
             ),
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
         )
         st.caption("Every sheet in the workbook must have exactly these columns.")
 
