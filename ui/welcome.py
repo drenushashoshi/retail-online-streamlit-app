@@ -158,12 +158,35 @@ def render_home() -> None:
     m2.metric("Period covered", _period_covered(sheets))
     m3.metric("Markets", _market_count(sheets))
 
-    with st.expander("👀 Peek at the first rows"):
-        st.dataframe(
-            next(iter(sheets.values())).head(5),
-            hide_index=True,
-            use_container_width=True,
-        )
+    # PyArrow mismatch-type issues can occur if we don't enforce strict types on the preview DataFrame.
+    with st.expander(":eyes: Peek at the first rows"):
+        preview = next(iter(sheets.values())).head(5).copy()
+        
+        # Standardize preview column headers to ensure strict matching
+        preview.columns = preview.columns.str.strip()
+        
+        # 1. Cast generic text columns to strict strings (Stops Arrow from type guessing)
+        text_cols = ["Invoice", "StockCode", "Description", "Country"]
+        for col in text_cols:
+            if col in preview.columns:
+                preview[col] = preview[col].astype(str).str.strip()
+        
+        # 2. Enforce Datetime format safely
+        if "InvoiceDate" in preview.columns:
+            preview["InvoiceDate"] = pd.to_datetime(preview["InvoiceDate"], errors="coerce")
+            
+        # 3. Enforce Numeric Floats safely
+        if "Price" in preview.columns:
+            preview["Price"] = pd.to_numeric(preview["Price"], errors="coerce").astype("float64")
+            
+        # 4. Enforce Nullable Integers (Converts 13085.0 -> 13085, handles missing data)
+        nullable_int_cols = ["Quantity", "Customer ID"]
+        for col in nullable_int_cols:
+            if col in preview.columns:
+                preview[col] = pd.to_numeric(preview[col], errors="coerce").astype("Int64")
+
+        st.dataframe(preview, hide_index=True, use_container_width=True)
+    # --------------------------------------------
 
     st.info("⬅️ Open the three slides from the sidebar — or with the buttons above.")
 

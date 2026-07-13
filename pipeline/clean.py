@@ -102,23 +102,41 @@ def load_and_clean(file_bytes: bytes):
     df_raw = pd.concat(sheet_dict.values(), ignore_index=True)
     log.append(("Initial rows from all sheets", len(df_raw)))
 
-    #Standardize column names by stripping whitespace and drop duplicates
+    # Standardize column names by stripping whitespace
     df_raw.columns = df_raw.columns.str.strip()
 
-    #Standardize identifier types to prevent mixed-type mismatches (e.g str vs int64) across different sheets
+    # Standardize identifier types to prevent mixed-type mismatches (e.g str vs int64) across different sheets
     if "Invoice" in df_raw.columns:
-        df_raw["Invoice"] = df_raw["Invoice"].astype(str).str.strip()
+        df_raw["Invoice"] = df_raw["Invoice"].astype(str).str.strip().astype("object")
     if "StockCode" in df_raw.columns:
-        df_raw["StockCode"] = df_raw["StockCode"].astype(str).str.strip()
+        df_raw["StockCode"] = df_raw["StockCode"].astype(str).str.strip().astype("object")
+    if "Description" in df_raw.columns:
+        df_raw["Description"] = df_raw["Description"].astype(str).astype("object")
+    if "Country" in df_raw.columns:
+        df_raw["Country"] = df_raw["Country"].astype(str).str.strip().astype("object")
 
-    #Dropping duplicates and logging the number of rows dropped
-    len_before_dedup = len(df_raw)
-    df_raw = df_raw.drop_duplicates()
-    log.append(("Total dropped duplicate rows", len_before_dedup - len(df_raw)))
+    if "InvoiceDate" in df_raw.columns:
+        df_raw["InvoiceDate"] = pd.to_datetime(df_raw["InvoiceDate"], errors="coerce")
+
+    if "Price" in df_raw.columns:
+        df_raw["Price"] = pd.to_numeric(df_raw["Price"], errors="coerce").astype("float64")
+
+    if "Quantity" in df_raw.columns:
+        df_raw["Quantity"] = pd.to_numeric(df_raw["Quantity"], errors="coerce").astype("Int64")
+    if "Customer ID" in df_raw.columns:
+        df_raw["Customer ID"] = pd.to_numeric(df_raw["Customer ID"], errors="coerce").astype("Int64")
+
+    # Capture row count before passing to the P2 split_returns function
+    len_before_split = len(df_raw)
 
     # Split returns based on P2 logic
     df_sales_raw, df_returns = split_returns(df_raw)
+
+    # Calculate total dropped duplicates
+    total_unique_rows = len(df_sales_raw) + len(df_returns)
+    log.append(("Total dropped duplicate rows", len_before_split - total_unique_rows))
     log.append(("Total rows in returns after splitting", len(df_returns)))
+
 
     # Final sales cleaning and logging 
     df_sales, sales_cleaning_log = clean_sales(df_sales_raw)
@@ -126,7 +144,4 @@ def load_and_clean(file_bytes: bytes):
     log.append(("Total rows in sales after cleaning as final", len(df_sales)))
 
     return df_sales, df_returns, log, errors
-
-
-
 
