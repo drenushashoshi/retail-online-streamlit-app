@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from pipeline.clean import split_returns
+from pipeline.clean import split_returns, clean_sales, load_and_clean
 from pipeline.validate import (
     EXPECTED_COLUMNS,
     validate_extension,
@@ -213,3 +213,124 @@ def test_split_returns_empty_dataframe_returns_empty_sales_and_returns():
     assert returns.empty
     assert sales_raw.columns.tolist() == EXPECTED_COLUMNS
     assert returns.columns.tolist() == EXPECTED_COLUMNS
+
+# --- clean_sales: cleaning (P3) --------------------------------------------
+
+
+def test_clean_sales_filters_stockcodes_properly():
+    """Verify standard codes, alphanumeric variations are kept, and administrative codes are dropped."""
+    raw_data = {
+        "Invoice": ["100", "200", "300", "400", "500"],
+        "StockCode": [
+            "85123A",  # Valid: 5 digits + suffix alpha (KEEP)
+            22423,     # Valid: Pure 5-digit number (KEEP)
+            "POST",    # Invalid: Administrative alpha code (DROP)
+            "1234",    # Invalid: Too short (DROP)
+            "M",       # Invalid: Manual entry code (DROP)
+        ],
+        "Price": [2.55, 10.0, 15.0, 1.0, 50.0],
+        "Quantity": [6, 2, 1, 10, 1],
+    }
+    df = pd.DataFrame(raw_data)
+
+    df_sales, log = clean_sales(df)
+
+    # 3 rows should be dropped (POST, 1234, M), leaving 2 rows
+    assert len(df_sales) == 2
+    assert list(df_sales["StockCode"]) == ["85123A", "22423"]
+    assert log[0] == ("Removed non-standard stockcodes (e.g M, D, POST)", 3)
+
+
+def test_clean_sales_filters_positive_metrics_and_calculates_revenue():
+    """Verify non-positive Prices or Quantities are excluded, and Revenue is correct."""
+    raw_data = {
+        "Invoice": ["1", "2", "3", "4", "5"],
+        "StockCode": ["22423", "22423", "22423", "22423", "22423"],
+        "Price": [2.0, 0.0, -1.5, 4.0, 3.5],  # 0.0 and negative should be dropped
+        "Quantity": [10, 5, 2, -5, 4],       # negative should be dropped
+    }
+    df = pd.DataFrame(raw_data)
+
+    df_sales, log = clean_sales(df)
+
+    # Only row 1 (2.0 * 10) and row 5 (3.5 * 4) should pass
+    assert len(df_sales) == 2
+    assert list(df_sales["Revenue"]) == [20.0, 14.0]
+    assert log[1] == ("Removed rows with non-positive Price or Quantity", 3)
+
+
+def test_clean_sales_handles_empty_dataframe_gracefully():
+    """Ensure clean_sales returns empty datasets with correct schema columns instead of crashing."""
+    df_empty = pd.DataFrame(columns=["Invoice", "StockCode", "Price", "Quantity"])
+    
+    df_sales, log = clean_sales(df_empty)
+    
+    assert df_sales.empty
+    assert "Revenue" in df_sales.columns
+    assert log[0][1] == 0
+    assert log[1][1] == 0
+
+
+# --- load_and_clean: full pipeline (P3) -------------------------------------
+
+
+def test_load_and_clean_handles_corrupt_bytes_without_crashing():
+    """Verify that file reading exceptions log a proper error message and do not trigger a crash."""
+    corrupt_bytes = b"Not a real excel workbook format"
+    
+    df_sales, df_returns, log, errors = load_and_clean(corrupt_bytes)
+    
+    assert df_sales.empty
+    assert df_returns.empty
+    assert len(errors) == 1
+    assert "Error reading Excel file:" in errors[0]
+
+
+def test_load_and_clean_multi_sheet_deduplication_and_split():
+    """Test full assembly: cross-sheet duplicates removal, parsing returns, and final cleaning."""
+    import io
+
+    # Construct an in-memory valid multisheet workbook mock
+    excel_buffer = io.BytesIO()
+    
+    sheet1_data = {
+        "Invoice": ["489434", "C489444"],  # Valid Sale, Valid Return
+        "StockCode": ["21871", "21871"],
+        "Price": [4.15, 4.15],
+        "Quantity": [6, 1],
+        "Description": ["ITEM A", "ITEM A"],
+        "InvoiceDate": ["2009-12-01 07:45", "2009-12-01 07:45"],
+        "Customer ID": [13085.0, 13085.0],
+        "Country": ["United Kingdom", "United Kingdom"],
+    }
+    sheet2_data = {
+        "Invoice": ["489434", "489435"],  # Cross-sheet duplicate with sheet1, and a new unique sale
+        "StockCode": ["21871", "21872"],
+        "Price": [4.15, 1.25],
+        "Quantity": [6, 12],
+        "Description": ["ITEM A", "ITEM B"],
+        "InvoiceDate": ["2009-12-01 07:45", "2009-12-01 07:48"],
+        "Customer ID": [13085.0, 13085.0],
+        "Country": ["United Kingdom", "United Kingdom"],
+    }
+    
+    with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
+        pd.DataFrame(sheet1_data).to_excel(writer, sheet_name="Sheet 1", index=False)
+        pd.DataFrame(sheet2_data).to_excel(writer, sheet_name="Sheet 2", index=False)
+        
+    file_bytes = excel_buffer.getvalue()
+
+    # Run full integrated pipeline
+    df_sales, df_returns, log, errors = load_and_clean(file_bytes)
+
+    assert len(errors) == 0
+    # 4 initial rows combined -> 1 exact duplicate dropped -> 3 left.
+    # Out of 3: 1 is a Cancellation return ('C'), 2 are valid sales rows.
+    assert len(df_sales) == 2
+    assert len(df_returns) == 1
+    
+    # Assert logs match expected messaging
+    assert any("Initial rows from all sheets" in entry[0] for entry in log)
+    assert any("Total dropped duplicate rows" in entry[0] for entry in log)
+    assert any("Total rows in returns after splitting" in entry[0] for entry in log)
+    assert any("Total rows in sales after cleaning as final" in entry[0] for entry in log)

@@ -104,6 +104,14 @@ def load_and_clean(file_bytes: bytes):
 
     #Standardize column names by stripping whitespace and drop duplicates
     df_raw.columns = df_raw.columns.str.strip()
+
+    #Standardize identifier types to prevent mixed-type mismatches (e.g str vs int64) across different sheets
+    if "Invoice" in df_raw.columns:
+        df_raw["Invoice"] = df_raw["Invoice"].astype(str).str.strip()
+    if "StockCode" in df_raw.columns:
+        df_raw["StockCode"] = df_raw["StockCode"].astype(str).str.strip()
+
+    #Dropping duplicates and logging the number of rows dropped
     len_before_dedup = len(df_raw)
     df_raw = df_raw.drop_duplicates()
     log.append(("Total dropped duplicate rows", len_before_dedup - len(df_raw)))
@@ -117,7 +125,7 @@ def load_and_clean(file_bytes: bytes):
     log.extend(sales_cleaning_log)
     log.append(("Total rows in sales after cleaning as final", len(df_sales)))
 
-    return df_sales, df_returns, log, errors 
+    return df_sales, df_returns, log, errors
 
 
 
