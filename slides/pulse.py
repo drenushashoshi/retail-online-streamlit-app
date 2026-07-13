@@ -5,56 +5,31 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from pipeline.aggregate import monthly_revenue
 
 
 def compute_monthly_metrics(df_sales: pd.DataFrame) -> pd.DataFrame:
     """Aggregates row-level transactions and calculates robust MoM and YoY metrics."""
-    df = df_sales.copy()
-    
-    # Datetime conversion for reliable time-series grouping
-    if not pd.api.types.is_datetime64_any_dtype(df["InvoiceDate"]):
-        df["InvoiceDate"] = pd.to_datetime(df["InvoiceDate"])
+    # 1. Call monthly_revenue to get the base monthly aggregates
+    df_monthly = monthly_revenue(df_sales)
 
-    # Floor timestamps to the first of the month for stable time-series grouping
-    df["MS_Start"] = df["InvoiceDate"].dt.to_period("M").dt.to_timestamp()
+    if df_monthly.empty:
+        return df_monthly
 
-    # Aggregate total revenue per calendar month sequence
-    df_monthly = df.groupby("MS_Start", as_index=False)["Revenue"].sum()
-    df_monthly = df_monthly.sort_values("MS_Start").reset_index(drop=True)
+    # 2. Add additional columns for Year, Month_Name, and Period_Label for better visualization
+    df_monthly["Year"] = df_monthly["Month"].dt.year.astype(str)
+    df_monthly["Month_Name"] = df_monthly["Month"].dt.strftime("%b")
+    df_monthly["Period_Label"] = df_monthly["Month"].dt.strftime("%Y - %b")
 
-    # 1) Compute MoM % using sequential single-row shift
-    df_monthly["Prev_Month_Rev"] = df_monthly["Revenue"].shift(1)
-    df_monthly["MoM_Growth_%"] = (
-        (df_monthly["Revenue"] - df_monthly["Prev_Month_Rev"]) / df_monthly["Prev_Month_Rev"]
-    ) * 100
-
-    # 2) Compute YoY % robustly via a self-merge on exact historical dates
-    df_historical = df_monthly[["MS_Start", "Revenue"]].copy()
-    df_historical["Target_Year_Match"] = df_historical["MS_Start"] + pd.DateOffset(years=1)
-    df_historical = df_historical.rename(columns={"Revenue": "Prev_Year_Rev"})
-
-    df_monthly = pd.merge(
-        df_monthly,
-        df_historical[["Target_Year_Match", "Prev_Year_Rev"]],
-        left_on="MS_Start",
-        right_on="Target_Year_Match",
-        how="left"
-    ).drop(columns=["Target_Year_Match"])
-
-    df_monthly["YoY_Growth_%"] = (
-        (df_monthly["Revenue"] - df_monthly["Prev_Year_Rev"]) / df_monthly["Prev_Year_Rev"]
-    ) * 100
-
-    # Human-readable visual labels
-    df_monthly["Year"] = df_monthly["MS_Start"].dt.year.astype(str)
-    df_monthly["Month_Name"] = df_monthly["MS_Start"].dt.strftime("%b")
-    df_monthly["Period_Label"] = df_monthly["MS_Start"].dt.strftime("%Y - %b")
-
-    return df_monthly
+    # 3. Rename columns for clarity in the visualizations
+    return df_monthly.rename(columns={
+        "MoM %": "MoM_Growth_%",
+        "YoY %": "YoY_Growth_%"
+    })
 
 
 def slide_pulse(df_sales: pd.DataFrame) -> None:
-    """Main entry point called by app.py. Renders Slide 3 interactive dashboard."""
+    """Main entry point called by app.py. Renders Slide 1 interactive dashboard."""
     
     # Checking if there is data to process
     if df_sales.empty:
@@ -64,7 +39,7 @@ def slide_pulse(df_sales: pd.DataFrame) -> None:
     # Compute aggregates dynamically
     df_monthly = compute_monthly_metrics(df_sales)
 
-    # --- Visual 1: Dual-Axis Revenue & MoM % ---
+    #  Visual 1: Dual-Axis Revenue & MoM % 
     st.write("")  # Add safe padding below the decision chip
     st.subheader("📊 Monthly Revenue & MoM Momentum")
     
@@ -77,7 +52,7 @@ def slide_pulse(df_sales: pd.DataFrame) -> None:
             y=df_monthly["Revenue"],
             name="Revenue ($)",
             marker_color="#1f77b4",
-            hovertemplate="Period: %{x}<br>Revenue: $% {y:,.2f}<extra></extra>"
+            hovertemplate="Period: %{x}<br>Revenue: $%{y:,.2f}<extra></extra>"
         ),
         secondary_y=False
     )
@@ -103,9 +78,9 @@ def slide_pulse(df_sales: pd.DataFrame) -> None:
     fig_mom.update_yaxes(title_text="Total Revenue ($)", secondary_y=False, showgrid=True)
     fig_mom.update_yaxes(title_text="MoM Growth Rate (%)", secondary_y=True, showgrid=False)
     
-    st.plotly_chart(fig_mom, width="stretch")
+    st.plotly_chart(fig_mom, use_container_width=True)
 
-    st.divider(width="stretch")
+    st.divider()
 
     # Visual 2: YoY Seasonal Trajectory Overlay 
     st.subheader("🔄 Year-over-Year (YoY) Trajectory Overlap")
@@ -130,4 +105,4 @@ def slide_pulse(df_sales: pd.DataFrame) -> None:
     )
     fig_yoy.update_yaxes(showgrid=True)
 
-    st.plotly_chart(fig_yoy, width="stretch")
+    st.plotly_chart(fig_yoy, use_container_width=True)

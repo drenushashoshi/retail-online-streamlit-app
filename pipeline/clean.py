@@ -49,7 +49,7 @@ def clean_sales(df: pd.DataFrame) -> tuple[pd.DataFrame, list[tuple[str, int]]]:
     df_sales["StockCode"] = df_sales["StockCode"].astype(str).str.strip()
 
     # Keep only 5-digit standard stockcodes (e.g. 85123A is non-standard, M, D, POST are non-standard)
-    mask_stockcode = df_sales["StockCode"].str.match(r"^\d{5}$", na=False)
+    mask_stockcode = df_sales["StockCode"].str.match(r"^\d{5}", na=False)
 
     # df_sales Dataframe with TRUE (allows to pass through) for rows with standard stockcodes and FALSE(completely dropped) for non-standard stockcodes, appending the changes into the cleaning_log list with the number of rows removed in this step.
 
