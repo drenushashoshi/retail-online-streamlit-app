@@ -11,7 +11,21 @@ import pandas as pd
 
 def monthly_revenue(df: pd.DataFrame) -> pd.DataFrame:
     """(P4) Monthly revenue + MoM % + YoY % for Slide 1."""
-    raise NotImplementedError("P4 — in progress")
+    if df.empty:
+        return pd.DataFrame(columns=["Month", "Revenue", "MoM %", "YoY %"])
+
+    # 1. Group by Year-Month
+    df_monthly = df.groupby(df["InvoiceDate"].dt.to_period("M"))["Revenue"].sum().reset_index()
+    df_monthly["Month"] = df_monthly["InvoiceDate"].dt.to_timestamp()
+    df_monthly = df_monthly.sort_values("Month").reset_index(drop=True)
+
+    # 2. Calculate Month-over-Month % changes
+    df_monthly["MoM %"] = df_monthly["Revenue"].pct_change() * 100
+
+    # 3. Calculate Year-over-Year % changes (shifting by 12 months)
+    df_monthly["YoY %"] = df_monthly["Revenue"].pct_change(periods=12) * 100
+
+    return df_monthly[["Month", "Revenue", "MoM %", "YoY %"]]
 
 
 def top_products(df: pd.DataFrame) -> pd.DataFrame:
