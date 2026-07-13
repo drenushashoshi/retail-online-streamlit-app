@@ -12,10 +12,27 @@ import pandas as pd
 def split_returns(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     """(P2) Strip column names, drop duplicates, split C-invoices.
 
-    Returns (sales_raw, returns). Returned invoices are NOT dropped —
+    Returns (sales_raw, df_returns). Returned invoices are NOT dropped —
     Slide 3 needs them!
     """
-    raise NotImplementedError("P2 — in progress")
+    if "Invoice" not in [str(col).strip() for col in df.columns]:
+        raise ValueError('Missing required column: "Invoice".')
+
+    if df.empty:
+        empty = df.copy()
+        empty.columns = [str(col).strip() for col in empty.columns]
+        return empty.copy(), empty.copy()
+
+    cleaned = df.copy()
+    cleaned.columns = [str(col).strip() for col in cleaned.columns]
+    cleaned = cleaned.drop_duplicates()
+
+    invoice_series = cleaned["Invoice"]
+    is_return = invoice_series.map(lambda value: str(value).startswith("C"))
+
+    sales_raw = cleaned.loc[~is_return].copy()
+    df_returns = cleaned.loc[is_return].copy()
+    return sales_raw, df_returns
 
 
 def clean_sales(df: pd.DataFrame) -> tuple[pd.DataFrame, list[tuple[str, int]]]:
