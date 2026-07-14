@@ -53,12 +53,38 @@ def monthly_revenue(df: pd.DataFrame) -> pd.DataFrame:
 
 def top_products(df: pd.DataFrame) -> pd.DataFrame:
     """(P4) Top 10 products by revenue (not by row count!)."""
-    raise NotImplementedError("P4 — in progress")
+    columns = ["Description", "Revenue", "Line Items"]
+    if df.empty:
+        return pd.DataFrame(columns=columns)
+
+    ranked = (
+        df.groupby("Description", as_index=False)
+        .agg(Revenue=("Revenue", "sum"), **{"Line Items": ("Description", "count")})
+        .sort_values("Revenue", ascending=False)
+        .head(10)
+        .reset_index(drop=True)
+    )
+    return ranked[columns]
 
 
 def markets_summary(df: pd.DataFrame) -> pd.DataFrame:
     """(P4) Markets with average revenue per order (the 'Netherlands' effect)."""
-    raise NotImplementedError("P4 — in progress")
+    columns = ["Country", "Revenue", "Orders", "Avg Revenue Per Order"]
+    if df.empty:
+        return pd.DataFrame(columns=columns)
+
+    by_country = (
+        df.groupby("Country", as_index=False)
+        .agg(
+            Revenue=("Revenue", "sum"),
+            Orders=("Invoice", "nunique"),
+        )
+    )
+    by_country["Avg Revenue Per Order"] = by_country["Revenue"] / by_country["Orders"]
+    return (
+        by_country.sort_values("Avg Revenue Per Order", ascending=False)
+        .reset_index(drop=True)[columns]
+    )
 
 
 def returns_summary(df_sales: pd.DataFrame, df_returns: pd.DataFrame) -> pd.DataFrame:
