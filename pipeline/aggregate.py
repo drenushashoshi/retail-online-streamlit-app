@@ -53,12 +53,45 @@ def monthly_revenue(df: pd.DataFrame) -> pd.DataFrame:
 
 def top_products(df: pd.DataFrame) -> pd.DataFrame:
     """(P4) Top 10 products by revenue (not by row count!)."""
-    raise NotImplementedError("P4 — in progress")
+    columns = ["Description", "Revenue", "Line Items"]
+    if df.empty:
+        return pd.DataFrame(columns=columns)
+
+    ranked = (
+        df.groupby("Description", as_index=False)
+        .agg(Revenue=("Revenue", "sum"), **{"Line Items": ("Description", "count")})
+        .sort_values("Revenue", ascending=False)
+        .head(10)
+        .reset_index(drop=True)
+    )
+    return ranked[columns]
 
 
-def markets_summary(df: pd.DataFrame) -> pd.DataFrame:
-    """(P4) Markets with average revenue per order (the 'Netherlands' effect)."""
-    raise NotImplementedError("P4 — in progress")
+def markets_summary(df: pd.DataFrame, min_orders: int = 5) -> pd.DataFrame:
+    """(P4) Markets with average revenue per order (the 'Netherlands' effect).
+
+    Markets with fewer than min_orders orders are left out of the ranking so a single
+    fluke order cannot crown a country as the highest-value market. If no market clears
+    the bar (small file), every market is kept rather than showing nothing.
+    """
+    columns = ["Country", "Revenue", "Orders", "Avg Revenue Per Order"]
+    if df.empty:
+        return pd.DataFrame(columns=columns)
+
+    by_country = (
+        df.groupby("Country", as_index=False)
+        .agg(Revenue=("Revenue", "sum"), Orders=("Invoice", "nunique"))
+    )
+    by_country["Avg Revenue Per Order"] = by_country["Revenue"] / by_country["Orders"]
+
+    ranked = by_country[by_country["Orders"] >= min_orders]
+    if ranked.empty:
+        ranked = by_country
+
+    return (
+        ranked.sort_values("Avg Revenue Per Order", ascending=False)
+        .reset_index(drop=True)[columns]
+    )
 
 
 def returns_summary(df_sales: pd.DataFrame, df_returns: pd.DataFrame) -> pd.DataFrame:

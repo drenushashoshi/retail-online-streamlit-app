@@ -4,7 +4,8 @@ Here: step 0 tests (validation, P1).
 Run with: `python -m pytest` from the repo root.
 """
 from __future__ import annotations
-from pipeline.aggregate import monthly_revenue
+from pipeline.aggregate import monthly_revenue, markets_summary, top_products
+from slides.engines import _build_product_insight, _build_market_insight
 import pandas as pd
 import pytest
 
@@ -384,3 +385,146 @@ def test_monthly_revenue_missing_columns():
     # Act & Assert: Ensure it raises a KeyError cleanly if the pipeline contract is broken
     with pytest.raises(KeyError):
         monthly_revenue(df_broken)
+
+
+# --- top_products & markets_summary: P4 aggregations ------------------------
+
+
+def test_top_products_ranks_by_revenue_not_row_count():
+    """A product with fewer rows but higher revenue must outrank a high-row, low-revenue product."""
+    df = pd.DataFrame(
+        {
+            "Description": ["Bulk Lines", "Bulk Lines", "Bulk Lines", "Premium Gift"],
+            "Revenue": [10.0, 10.0, 10.0, 500.0],
+            "Invoice": ["A", "B", "C", "D"],
+            "Country": ["United Kingdom"] * 4,
+        }
+    )
+
+    result = top_products(df)
+
+    assert len(result) == 2
+    assert result.iloc[0]["Description"] == "Premium Gift"
+    assert result.iloc[0]["Revenue"] == 500.0
+    assert result.iloc[0]["Line Items"] == 1
+    assert result.iloc[1]["Description"] == "Bulk Lines"
+    assert result.iloc[1]["Revenue"] == 30.0
+    assert result.iloc[1]["Line Items"] == 3
+
+
+def test_top_products_returns_top_10_only():
+    descriptions = [f"Product {idx}" for idx in range(12)]
+    df = pd.DataFrame(
+        {
+            "Description": descriptions,
+            "Revenue": [float(100 - idx) for idx in range(12)],
+            "Invoice": descriptions,
+            "Country": ["United Kingdom"] * 12,
+        }
+    )
+
+    result = top_products(df)
+
+    assert len(result) == 10
+    assert result.iloc[0]["Description"] == "Product 0"
+    assert result.iloc[0]["Revenue"] == 100.0
+
+
+def test_top_products_empty_dataframe():
+    df_empty = pd.DataFrame(columns=["Description", "Revenue", "Invoice", "Country"])
+
+    result = top_products(df_empty)
+
+    assert result.empty
+    assert list(result.columns) == ["Description", "Revenue", "Line Items"]
+
+
+def test_markets_summary_calculates_avg_revenue_per_order():
+    df = pd.DataFrame(
+        {
+            "Country": ["Netherlands", "Netherlands", "United Kingdom", "United Kingdom"],
+            "Invoice": ["NL-1", "NL-1", "UK-1", "UK-2"],
+            "Revenue": [1000.0, 500.0, 80.0, 120.0],
+            "Description": ["A", "B", "C", "D"],
+        }
+    )
+
+    result = markets_summary(df)
+
+    netherlands = result.loc[result["Country"] == "Netherlands"].iloc[0]
+    united_kingdom = result.loc[result["Country"] == "United Kingdom"].iloc[0]
+
+    assert netherlands["Orders"] == 1
+    assert netherlands["Revenue"] == 1500.0
+    assert netherlands["Avg Revenue Per Order"] == 1500.0
+    assert united_kingdom["Orders"] == 2
+    assert united_kingdom["Avg Revenue Per Order"] == 100.0
+    assert result.iloc[0]["Country"] == "Netherlands"
+
+
+def test_markets_summary_empty_dataframe():
+    df_empty = pd.DataFrame(columns=["Country", "Invoice", "Revenue", "Description"])
+
+    result = markets_summary(df_empty)
+
+    assert result.empty
+    assert list(result.columns) == ["Country", "Revenue", "Orders", "Avg Revenue Per Order"]
+
+
+def test_build_product_insight_same_leader_returns_no_false_claim():
+    df = pd.DataFrame(
+        {
+            "Description": ["MUG", "DESK"],
+            "Revenue": [1500.0, 900.0],
+            "Line Items": [3, 1],
+        }
+    )
+    result = _build_product_insight(df, total_revenue=2400.0)
+
+    assert "despite only" not in result
+    assert "leads on both revenue and line items (3)" in result
+
+
+def test_build_product_insight_diverging_leaders_states_comparison():
+    df = pd.DataFrame(
+        {
+            "Description": ["Premium Gift", "Bulk Lines"],
+            "Revenue": [500.0, 30.0],
+            "Line Items": [1, 3],
+        }
+    )
+    result = _build_product_insight(df, total_revenue=530.0)
+
+    assert "outsells **Bulk Lines**" in result
+    assert "3 vs 1" in result
+
+
+def test_build_market_insight_baseline_equals_top_market():
+    df = pd.DataFrame(
+        {
+            "Country": ["Germany", "Luxembourg"],
+            "Revenue": [10000.0, 500.0],
+            "Orders": [50, 1],
+            "Avg Revenue Per Order": [200.0, 500.0],
+        }
+    )
+    result = _build_market_insight(df)
+
+    assert "is both the largest market by revenue" in result
+    assert "Germany" in result
+
+
+def test_markets_summary_excludes_low_order_countries_below_threshold():
+    df = pd.DataFrame(
+        {
+            "Country": ["Germany"] * 6 + ["Luxembourg"] * 2,
+            "Invoice": [f"DE-{i}" for i in range(6)] + ["LUX-1", "LUX-2"],
+            "Revenue": [100.0] * 6 + [5000.0, 100.0],
+            "Description": ["A"] * 8,
+        }
+    )
+
+    result = markets_summary(df)
+
+    assert "Luxembourg" not in result["Country"].tolist()
+    assert "Germany" in result["Country"].tolist()
