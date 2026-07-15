@@ -5,6 +5,7 @@ Run with: `python -m pytest` from the repo root.
 """
 from __future__ import annotations
 from pipeline.aggregate import monthly_revenue, markets_summary, top_products
+from slides.engines import _build_product_insight, _build_market_insight
 import pandas as pd
 import pytest
 
@@ -468,3 +469,62 @@ def test_markets_summary_empty_dataframe():
 
     assert result.empty
     assert list(result.columns) == ["Country", "Revenue", "Orders", "Avg Revenue Per Order"]
+
+
+def test_build_product_insight_same_leader_returns_no_false_claim():
+    df = pd.DataFrame(
+        {
+            "Description": ["MUG", "DESK"],
+            "Revenue": [1500.0, 900.0],
+            "Line Items": [3, 1],
+        }
+    )
+    result = _build_product_insight(df, total_revenue=2400.0)
+
+    assert "despite only" not in result
+    assert "leads on both revenue and line items (3)" in result
+
+
+def test_build_product_insight_diverging_leaders_states_comparison():
+    df = pd.DataFrame(
+        {
+            "Description": ["Premium Gift", "Bulk Lines"],
+            "Revenue": [500.0, 30.0],
+            "Line Items": [1, 3],
+        }
+    )
+    result = _build_product_insight(df, total_revenue=530.0)
+
+    assert "outsells **Bulk Lines**" in result
+    assert "3 vs 1" in result
+
+
+def test_build_market_insight_baseline_equals_top_market():
+    df = pd.DataFrame(
+        {
+            "Country": ["Germany", "Luxembourg"],
+            "Revenue": [10000.0, 500.0],
+            "Orders": [50, 1],
+            "Avg Revenue Per Order": [200.0, 500.0],
+        }
+    )
+    result = _build_market_insight(df)
+
+    assert "is both the largest market by revenue" in result
+    assert "Germany" in result
+
+
+def test_markets_summary_excludes_low_order_countries_below_threshold():
+    df = pd.DataFrame(
+        {
+            "Country": ["Germany"] * 6 + ["Luxembourg"] * 2,
+            "Invoice": [f"DE-{i}" for i in range(6)] + ["LUX-1", "LUX-2"],
+            "Revenue": [100.0] * 6 + [5000.0, 100.0],
+            "Description": ["A"] * 8,
+        }
+    )
+
+    result = markets_summary(df)
+
+    assert "Luxembourg" not in result["Country"].tolist()
+    assert "Germany" in result["Country"].tolist()

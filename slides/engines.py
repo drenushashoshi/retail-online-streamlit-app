@@ -64,11 +64,19 @@ def _build_product_insight(df_products: pd.DataFrame, total_revenue: float) -> s
 
     leader = df_products.iloc[0]
     share = (leader["Revenue"] / total_revenue) * 100
-    return (
+    headline = (
         f"**{leader['Description']}** leads with {_format_currency(leader['Revenue'])} "
-        f"({share:.1f}% of total revenue). "
-        f"It ranks #1 by revenue despite only {int(leader['Line Items'])} line items — "
-        "revenue beats raw row count."
+        f"({share:.1f}% of total revenue)."
+    )
+
+    # Only claim "revenue beats row count" when the two rankings actually diverge.
+    busiest = df_products.loc[df_products["Line Items"].idxmax()]
+    if busiest["Description"] == leader["Description"]:
+        return f"{headline} It leads on both revenue and line items ({int(leader['Line Items'])})."
+
+    return (
+        f"{headline} It outsells **{busiest['Description']}**, which has more line items "
+        f"({int(busiest['Line Items'])} vs {int(leader['Line Items'])}) — revenue beats raw row count."
     )
 
 
@@ -83,15 +91,20 @@ def _build_market_insight(df_markets: pd.DataFrame) -> str:
             f"{_format_currency(top_market['Avg Revenue Per Order'])} per order."
         )
 
-    baseline = df_markets.iloc[-1]
-    uplift = (
-        (top_market["Avg Revenue Per Order"] / baseline["Avg Revenue Per Order"]) - 1
-    ) * 100
+    # Baseline = the biggest market by total revenue, not the smallest country in the list.
+    baseline = df_markets.loc[df_markets["Revenue"].idxmax()]
+    if baseline["Country"] == top_market["Country"]:
+        return (
+            f"**{top_market['Country']}** is both the largest market by revenue and the "
+            f"highest value per order ({_format_currency(top_market['Avg Revenue Per Order'])})."
+        )
+
+    uplift = ((top_market["Avg Revenue Per Order"] / baseline["Avg Revenue Per Order"]) - 1) * 100
     return (
         f"**{top_market['Country']}** averages "
         f"{_format_currency(top_market['Avg Revenue Per Order'])} per order "
-        f"({uplift:+.0f}% vs {baseline['Country']}) — fewer orders, higher ticket size "
-        "(the wholesale / Netherlands effect)."
+        f"({uplift:+.0f}% vs **{baseline['Country']}**, the largest market by revenue) — "
+        "fewer orders, higher ticket size (the wholesale / Netherlands effect)."
     )
 
 
