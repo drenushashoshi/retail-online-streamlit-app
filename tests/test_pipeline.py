@@ -528,3 +528,46 @@ def test_markets_summary_excludes_low_order_countries_below_threshold():
 
     assert "Luxembourg" not in result["Country"].tolist()
     assert "Germany" in result["Country"].tolist()
+    # --- P5 task tests (returns_summary & top_customers) -------------------------
+
+def test_returns_summary_handles_no_revenue_column():
+    # Mock data where df_returns lacks a Revenue column initially
+    sales_df = pd.DataFrame({
+        "InvoiceDate": [pd.Timestamp("2026-01-15"), pd.Timestamp("2026-01-20")],
+        "Revenue": [1000.0, 500.0]
+    })
+    returns_df = pd.DataFrame({
+        "InvoiceDate": [pd.Timestamp("2026-01-18")],
+        "Price": [12.75],
+        "Quantity": [-2],
+        "Description": ["REGENCY CAKESTAND"]
+    })
+
+    from pipeline.aggregate import returns_summary
+    result = returns_summary(sales_df, returns_df)
+
+    assert len(result) == 1
+    assert "Return Rate %" in result.columns
+    # Returned Revenue should be absolute value: 12.75 * 2 = 25.5
+    assert result.iloc[0]["Returned Revenue"] == 25.5
+    # Return Rate %: (25.5 / 1500) * 100 = 1.7%
+    assert round(result.iloc[0]["Return Rate %"], 2) == 1.70
+    assert result.iloc[0]["Most Returned Product"] == "REGENCY CAKESTAND"
+
+
+def test_top_customers_returns_sorted_descending():
+    df = pd.DataFrame({
+        "Customer ID": [12345.0, 12345.0, 67890.0, 99999.0],
+        "Revenue": [100.0, 200.0, 500.0, 50.0]
+    })
+
+    from pipeline.aggregate import top_customers
+    result = top_customers(df)
+
+    assert len(result) == 3
+    # Top should be Customer 67890 (Revenue 500.0)
+    assert result.iloc[0]["Customer ID"] == "67890"
+    assert result.iloc[0]["Revenue"] == 500.0
+    # Second should be Customer 12345 (Revenue 300.0)
+    assert result.iloc[1]["Customer ID"] == "12345"
+    assert result.iloc[1]["Revenue"] == 300.0

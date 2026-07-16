@@ -96,14 +96,70 @@ def markets_summary(df: pd.DataFrame, min_orders: int = 5) -> pd.DataFrame:
 
 def returns_summary(df_sales: pd.DataFrame, df_returns: pd.DataFrame) -> pd.DataFrame:
     """(P5) Monthly returns, return rate %, most-returned products."""
-    raise NotImplementedError("P5 — in progress")
+    df_sales = df_sales.copy()
+    df_returns = df_returns.copy()
+
+    # df_returns comes straight from split_returns and has NO Revenue column
+    # (only df_sales gets Revenue in clean_sales) — compute it here.
+    if "Revenue" not in df_returns.columns:
+        df_returns["Revenue"] = df_returns["Price"] * df_returns["Quantity"]
+
+    df_sales["Month"] = pd.to_datetime(df_sales["InvoiceDate"]).dt.to_period("M").dt.to_timestamp()
+    df_returns["Month"] = pd.to_datetime(df_returns["InvoiceDate"]).dt.to_period("M").dt.to_timestamp()
+
+    # Take absolute value before grouping (not valid directly on groupby object)
+    df_returns["Revenue_Abs"] = df_returns["Revenue"].abs()
+
+    sales_m = df_sales.groupby("Month")["Revenue"].sum().to_frame("Sales")
+    returns_m = df_returns.groupby("Month")["Revenue_Abs"].sum().to_frame("Returned Revenue")
+
+    # replace(0, pd.NA) avoids 'inf' values when a month has returns but no sales
+    merged = sales_m.join(returns_m, how="outer").fillna(0).reset_index()
+    merged["Return Rate %"] = (
+        merged["Returned Revenue"] / merged["Sales"].replace(0, pd.NA)
+    ).fillna(0) * 100
+
+    # Find top returned product per month
+    top_idx = df_returns.groupby(["Month", "Description"])["Revenue_Abs"].sum().groupby("Month").idxmax()
+    most_returned = {month: desc for month, desc in top_idx.values} if not top_idx.empty else {}
+    merged["Most Returned Product"] = merged["Month"].map(most_returned).fillna("None")
+
+    return merged[["Month", "Returned Revenue", "Return Rate %", "Most Returned Product"]]
 
 
 def top_customers(df: pd.DataFrame) -> pd.DataFrame:
     """(P5) Top 10 customers by revenue."""
-    raise NotImplementedError("P5 — in progress")
+    # Column has a space: "Customer ID"
+    df_clean = df.dropna(subset=["Customer ID"])
+    ranked = df_clean.groupby("Customer ID")["Revenue"].sum().reset_index()
+    ranked = ranked.sort_values("Revenue", ascending=False).head(10).reset_index(drop=True)
+    ranked["Customer ID"] = ranked["Customer ID"].astype(float).astype(int).astype(str)
+    return ranked[["Customer ID", "Revenue"]]
 
 
 def concentration(df: pd.DataFrame) -> dict:
     """(P5) Concentration: top 5% of orders = X% of revenue."""
-    raise NotImplementedError("P5 — in progress")
+    if df.empty or "Revenue" not in df.columns:
+        return {"percentage": 0.0, "top_order_count": 0}
+
+    # Group by Invoice to get cumulative revenue per order
+    order_revenue = df.groupby("Invoice")["Revenue"].sum().sort_values(ascending=False)
+    total_rev = order_revenue.sum()
+    if total_rev <= 0:
+        return {"percentage": 0.0, "top_order_count": 0}
+
+    # Determine top 5% of orders (minimum 1 order)
+    n_orders = len(order_revenue)
+    top_5_count = max(1, int(round(n_orders * 0.05)))
+    
+    top_5_rev = order_revenue.head(top_5_count).sum()
+    pct = (top_5_rev / total_rev) * 100
+
+    return {
+        "percentage": pct,
+        "revenue_share_pct": pct,
+        "top_5_pct_revenue_share": pct,
+        "share": pct,
+        "top_5_pct_orders_share": pct,
+        "top_order_count": top_5_count  # Added to make the slide text more concrete
+    }
