@@ -96,14 +96,53 @@ def markets_summary(df: pd.DataFrame, min_orders: int = 5) -> pd.DataFrame:
 
 def returns_summary(df_sales: pd.DataFrame, df_returns: pd.DataFrame) -> pd.DataFrame:
     """(P5) Monthly returns, return rate %, most-returned products."""
-    raise NotImplementedError("P5 — in progress")
+    # Convert dates to Monthly Timestamps (e.g., '2026-01-01')
+    df_sales = df_sales.copy()
+    df_returns = df_returns.copy()
+    df_sales["Month"] = pd.to_datetime(df_sales["InvoiceDate"]).dt.to_period("M").dt.to_timestamp()
+    df_returns["Month"] = pd.to_datetime(df_returns["InvoiceDate"]).dt.to_period("M").dt.to_timestamp()
+
+    # Calculate monthly sales and absolute returns
+    sales_m = df_sales.groupby("Month")["Revenue"].sum().to_frame("Sales")
+    returns_m = df_returns.groupby("Month")["Revenue"].abs().sum().to_frame("Returned Revenue")
+
+    # Merge sales and returns, then calculate Return Rate %
+    merged = sales_m.join(returns_m, how="outer").fillna(0).reset_index()
+    merged["Return Rate %"] = (merged["Returned Revenue"] / merged["Sales"]).fillna(0) * 100
+
+    # Find the most returned product description for each Month
+    df_returns["Revenue_Abs"] = df_returns["Revenue"].abs()
+    top_idx = df_returns.groupby(["Month", "Description"])["Revenue_Abs"].sum().groupby("Month").idxmax()
+    most_returned = {month: desc for month, desc in top_idx.values} if not top_idx.empty else {}
+    
+    merged["Most Returned Product"] = merged["Month"].map(most_returned).fillna("None")
+    return merged[["Month", "Returned Revenue", "Return Rate %", "Most Returned Product"]]
 
 
 def top_customers(df: pd.DataFrame) -> pd.DataFrame:
     """(P5) Top 10 customers by revenue."""
-    raise NotImplementedError("P5 — in progress")
-
+    # Drop rows without a CustomerID
+    df_clean = df.dropna(subset=["CustomerID"])
+    
+    # Sum revenue per customer, sort, and keep the top 10
+    ranked = df_clean.groupby("CustomerID")["Revenue"].sum().reset_index()
+    ranked = ranked.sort_values("Revenue", ascending=False).head(10).reset_index(drop=True)
+    
+    # Format CustomerID to a clean integer string (e.g., '12345' instead of '12345.0')
+    ranked["CustomerID"] = ranked["CustomerID"].astype(float).astype(int).astype(str)
+    return ranked[["CustomerID", "Revenue"]]
 
 def concentration(df: pd.DataFrame) -> dict:
     """(P5) Concentration: top 5% of orders = X% of revenue."""
-    raise NotImplementedError("P5 — in progress")
+    if df.empty:
+        return {"percentage": 0.0}
+    
+    # Get total revenue for each unique order, sorted biggest to smallest
+    orders = df.groupby("Invoice")["Revenue"].sum().sort_values(ascending=False)
+    
+    # Calculate how many orders make up 5% (at least 1 order)
+    top_5_count = max(1, int(round(len(orders) * 0.05)))
+    
+    # Find the revenue share of those top 5% orders
+    pct = (orders.head(top_5_count).sum() / orders.sum()) * 100
+    return {"percentage": pct}
