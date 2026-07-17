@@ -64,6 +64,23 @@ _CSS = """
 .dec-text  { font-size: 0.88rem; }
 
 /* --- sidebar ------------------------------------------------------------ */
+section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
+    max-height: 100vh;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-bottom: 1.5rem;
+}
+
+/* Selectbox menus are rendered in a popover outside the sidebar, so they
+   need their own scroll container when the country list is long. */
+[data-baseweb="popover"] [role="listbox"],
+[data-baseweb="popover"] [data-baseweb="menu"] {
+    max-height: min(60vh, 26rem) !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+}
+
 .sb-brand {
     font-size: 1.3rem;
     font-weight: 800;
