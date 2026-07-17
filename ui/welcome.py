@@ -148,6 +148,21 @@ def render_home() -> None:
             errors = validate_workbook(sheets)
 
     if errors:
+        # A rejected file must not leave a stale report active. Clear any
+        # previously loaded file so the KPI row, slides, and sidebar reset to
+        # the empty state instead of silently showing the old file's data.
+        had_stale = any(
+            key in st.session_state for key in ("file_bytes", "sheets", "valid_file")
+        )
+        for stale_key in ("file_bytes", "sheets", "valid_file"):
+            st.session_state.pop(stale_key, None)
+
+        # The sidebar is drawn before this page runs, so it still shows the old
+        # file — rerun once so it resets too. The rerun re-enters here, errors
+        # again with clean state (had_stale now False), and stops.
+        if had_stale:
+            st.rerun()
+
         st.error(
             f"**{SCHEMA_ERROR_HEADER}**\n\n"
             + "\n".join(f"- {e}" for e in errors)
