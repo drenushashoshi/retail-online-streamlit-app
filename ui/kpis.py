@@ -33,7 +33,7 @@ def _prepare_monthly_kpis(df_sales: pd.DataFrame) -> tuple[pd.Series, pd.Series 
 
 def _format_value(metric_key: str, value: float) -> str:
     if metric_key in {"revenue", "aov"}:
-        return f"{value:,.2f}"
+        return f"£{value:,.2f}"
     if metric_key in {"orders", "customers"}:
         return f"{int(round(value)):,}"
     return f"{value:,.0f}"
@@ -45,7 +45,7 @@ def _format_delta(metric_key: str, latest: float, previous: float | None) -> str
 
     change = latest - previous
     if metric_key in {"revenue", "aov"}:
-        return f"{change:+,.2f} vs prev month"
+        return f"£{change:+,.2f} vs prev month"
     if metric_key in {"orders", "customers"}:
         return f"{int(round(change)):+,} vs prev month"
     return f"{change:+,.0f} vs prev month"
@@ -62,7 +62,7 @@ def render_kpis(df_sales: pd.DataFrame) -> None:
         st.info(str(exc))
         return
 
-    st.subheader("Monthly KPI Pulse")
+    st.subheader("This Month at a Glance")
     cols = st.columns(5)
     metrics = [
         ("Revenue", "revenue"),
