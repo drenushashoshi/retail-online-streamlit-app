@@ -55,7 +55,14 @@ def compute_product_movers(df_sales: pd.DataFrame, top_n: int = 5) -> pd.DataFra
 
 
 def _format_currency(value: float) -> str:
-    return f"${value:,.2f}"
+    return f"£{value:,.2f}"
+
+
+def _format_metric(value: float) -> str:
+    """Compact currency for st.metric so large values don't get truncated."""
+    if abs(value) >= 10_000:
+        return f"£{value / 1000:,.1f}k"
+    return f"£{value:,.2f}"
 
 
 def _build_product_insight(df_products: pd.DataFrame, total_revenue: float) -> str:
@@ -125,12 +132,12 @@ def slide_engines(df_sales: pd.DataFrame) -> None:
     metric_cols = st.columns(3)
     with metric_cols[0]:
         top_product_rev = float(df_products.iloc[0]["Revenue"]) if not df_products.empty else 0.0
-        st.metric("Top product revenue", _format_currency(top_product_rev))
+        st.metric("Top product revenue", _format_metric(top_product_rev))
     with metric_cols[1]:
         top_market_aov = (
             float(df_markets.iloc[0]["Avg Revenue Per Order"]) if not df_markets.empty else 0.0
         )
-        st.metric("Highest avg order value", _format_currency(top_market_aov))
+        st.metric("Highest avg order value", _format_metric(top_market_aov))
     with metric_cols[2]:
         active_markets = int(df_markets["Country"].nunique()) if not df_markets.empty else 0
         st.metric("Active markets", f"{active_markets:,}")
@@ -149,7 +156,7 @@ def slide_engines(df_sales: pd.DataFrame) -> None:
             x="Revenue",
             y="Description",
             orientation="h",
-            labels={"Revenue": "Revenue ($)", "Description": "Product"},
+            labels={"Revenue": "Revenue (£)", "Description": "Product"},
             color_discrete_sequence=[ACCENT],
             template="plotly_white",
         )
@@ -172,7 +179,7 @@ def slide_engines(df_sales: pd.DataFrame) -> None:
             y="Country",
             orientation="h",
             labels={
-                "Avg Revenue Per Order": "Avg revenue / order ($)",
+                "Avg Revenue Per Order": "Avg revenue / order (£)",
                 "Country": "Country",
             },
             color_discrete_sequence=[ACCENT],
@@ -192,9 +199,9 @@ def slide_engines(df_sales: pd.DataFrame) -> None:
         st.dataframe(
             df_movers.style.format(
                 {
-                    "Previous Revenue": "${:,.2f}",
-                    "Current Revenue": "${:,.2f}",
-                    "Change": "${:+,.2f}",
+                    "Previous Revenue": "£{:,.2f}",
+                    "Current Revenue": "£{:,.2f}",
+                    "Change": "£{:+,.2f}",
                     "Change %": "{:+.1f}%",
                 },
                 na_rep="—",
