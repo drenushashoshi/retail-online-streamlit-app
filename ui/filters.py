@@ -65,8 +65,13 @@ def _persistent_selectbox(label: str, options: list[str], state_key: str) -> str
 
 def render_filters(
     df_sales: pd.DataFrame, df_returns: pd.DataFrame
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Draw the dropdowns in the sidebar; return the filtered (sales, returns)."""
+) -> tuple[str, str]:
+    """Draw the period / country dropdowns in the sidebar.
+
+    Returns the raw (period, country) selections so the caller can decide how
+    to apply them — the Business Pulse slide, for example, must ignore the year
+    filter because its MoM/YoY comparisons need the prior year's rows.
+    """
     with st.sidebar:
         st.divider()
         st.markdown("**🔎 Report filters**")
@@ -79,7 +84,4 @@ def render_filters(
         if period != ALL_PERIODS or country != ALL_COUNTRIES:
             st.caption("Applied to the KPIs and all three slides.")
 
-    return (
-        apply_filters(df_sales, period, country),
-        apply_filters(df_returns, period, country),
-    )
+    return period, country
