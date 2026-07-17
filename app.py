@@ -17,6 +17,7 @@ import streamlit as st
 
 from pipeline.clean import load_and_clean
 from slides import slide_engines, slide_leaks, slide_pulse
+from ui.filters import ALL_PERIODS, apply_filters, render_filters
 from ui.kpis import render_kpis
 from ui.sidebar import render_sidebar
 from ui.theme import ACCENTS, inject_css
@@ -65,6 +66,26 @@ def _render_slide_page(key: str) -> None:
 
     try:
         df_sales, df_returns, log, errors = load_and_clean(st.session_state["file_bytes"])
+        period, country = render_filters(df_sales, df_returns)
+
+        # The year filter must skip Business Pulse: its MoM/YoY comparisons need
+        # the prior year's rows, which filtering to a single year would remove.
+        # Country still applies. Every other slide gets the full filter.
+        slide_period = ALL_PERIODS if key == "pulse" else period
+        df_sales = apply_filters(df_sales, slide_period, country)
+        df_returns = apply_filters(df_returns, slide_period, country)
+
+        # Shared empty-data guard: a valid but non-overlapping filter combo
+        # (e.g. a country that only traded in a different year) yields no rows.
+        # Stop here with one clear message instead of letting a slide render
+        # "the top 5% (0 orders) bring in 0.00% of revenue".
+        if df_sales.empty:
+            st.info(
+                "No sales match the current filters — adjust the period or "
+                "country in the sidebar."
+            )
+            return
+
         render((df_sales, df_returns))
     except NotImplementedError as todo:
         st.markdown(
@@ -84,7 +105,9 @@ if page == "home":
     # P2's KPI row — shown once a valid file is loaded
     if "file_bytes" in st.session_state:
         try:
-            df_sales, _, _, _ = load_and_clean(st.session_state["file_bytes"])
+            df_sales, df_returns, log, _ = load_and_clean(st.session_state["file_bytes"])
+            period, country = render_filters(df_sales, df_returns)
+            df_sales = apply_filters(df_sales, period, country)
             st.divider()
             render_kpis(df_sales)
         except NotImplementedError:

@@ -571,3 +571,81 @@ def test_top_customers_returns_sorted_descending():
     # Second should be Customer 12345 (Revenue 300.0)
     assert result.iloc[1]["Customer ID"] == "12345"
     assert result.iloc[1]["Revenue"] == 300.0
+
+
+# --- report filters: period / country dropdowns ------------------------------
+
+
+def make_filter_df() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "Invoice": ["1", "2", "3", "4"],
+            "InvoiceDate": pd.to_datetime(
+                ["2010-03-01", "2010-07-15", "2011-01-10", "2011-06-20"]
+            ),
+            "Country": ["United Kingdom", "France", "France", "Germany"],
+            "Revenue": [10.0, 20.0, 30.0, 40.0],
+        }
+    )
+
+
+def test_period_options_lists_years_from_both_frames():
+    from ui.filters import ALL_PERIODS, period_options
+
+    sales = make_filter_df()
+    returns = make_filter_df().assign(InvoiceDate=pd.to_datetime(["2009-12-05"] * 4))
+
+    options = period_options(sales, returns)
+
+    assert options == [ALL_PERIODS, "2009", "2010", "2011"]
+
+
+def test_country_options_sorted_with_all_first():
+    from ui.filters import ALL_COUNTRIES, country_options
+
+    options = country_options(make_filter_df(), make_filter_df().iloc[0:0])
+
+    assert options[0] == ALL_COUNTRIES
+    assert options[1:] == ["France", "Germany", "United Kingdom"]
+
+
+def test_apply_filters_by_year():
+    from ui.filters import ALL_COUNTRIES, apply_filters
+
+    result = apply_filters(make_filter_df(), "2010", ALL_COUNTRIES)
+
+    assert result["Invoice"].tolist() == ["1", "2"]
+
+
+def test_apply_filters_by_country():
+    from ui.filters import ALL_PERIODS, apply_filters
+
+    result = apply_filters(make_filter_df(), ALL_PERIODS, "France")
+
+    assert result["Invoice"].tolist() == ["2", "3"]
+
+
+def test_apply_filters_year_and_country_combined():
+    from ui.filters import apply_filters
+
+    result = apply_filters(make_filter_df(), "2011", "France")
+
+    assert result["Invoice"].tolist() == ["3"]
+
+
+def test_apply_filters_all_selections_keep_everything():
+    from ui.filters import ALL_COUNTRIES, ALL_PERIODS, apply_filters
+
+    df = make_filter_df()
+    result = apply_filters(df, ALL_PERIODS, ALL_COUNTRIES)
+
+    assert len(result) == len(df)
+
+
+def test_apply_filters_empty_frame_passthrough():
+    from ui.filters import apply_filters
+
+    df_empty = make_filter_df().iloc[0:0]
+    result = apply_filters(df_empty, "2010", "France")
+
+    assert result.empty

@@ -32,7 +32,15 @@ python -m pytest
 | Country | text |
 
 A file that doesn't match the schema is rejected with a clear message —
-try it with `sample_data/demo_bad_schema.xlsx`.
+try it with `sample_data/demo_bad_schema.xlsx`. For a fast demo with valid
+data use `sample_data/demo_sales.xlsx` (~8.6k rows sampled from the full
+dataset, whole invoices, returns included).
+
+## Report filters
+
+Once a file is loaded, the sidebar shows two dropdowns — **Period** (year)
+and **Country** — that recompute the KPI row and all three slides,
+including every chart and every insight sentence.
 
 ## Structure
 
@@ -41,6 +49,8 @@ try it with `sample_data/demo_bad_schema.xlsx`.
 ├── ui/
 │   ├── welcome.py          # Overview & Upload page: instructions, schema, uploader (P1)
 │   ├── sidebar.py          # sidebar navigation buttons + file status (P1)
+│   ├── filters.py          # period / country dropdowns applied to KPIs + slides
+│   ├── kpis.py             # monthly KPI row with MoM deltas (P2)
 │   └── theme.py            # shared CSS look & feel (P1)
 ├── pipeline/
 │   ├── validate.py         # step 0: schema validation (P1)
@@ -61,4 +71,5 @@ try it with `sample_data/demo_bad_schema.xlsx`.
 - Everyone works on their own branch `name/part` (e.g. `drenusha/validate`).
 - Streamlit Cloud auto-deploys from `main`.
 
-Accuracy check with the original file: **1,003,214 sales rows + 19,104 return rows**.
+Accuracy check with the original file: **1,003,214 sales rows + 19,104 return
+rows** (verified against `online_retail_II.xlsx` — matches the notebook).
