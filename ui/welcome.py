@@ -109,23 +109,36 @@ def render_home() -> None:
     )
 
     if uploaded is None:
+        # The uploader widget forgets its file when the manager visits a slide
+        # page and comes back — but the validated data is still in session
+        # state, so the summary (metrics + peek) must not disappear with it.
         file_info = st.session_state.get("valid_file")
-        if file_info:
-            st.success(
+        sheets = st.session_state.get("sheets")
+        if file_info and sheets:
+            _render_loaded_summary(
                 f'📄 **{file_info["name"]}** is loaded — open the slides from the sidebar. '
-                "Upload a new file any time to refresh the report."
+                "Upload a new file any time to refresh the report.",
+                sheets,
             )
         else:
             st.info("⬆️ Upload an .xlsx file to generate the report.")
         return
 
-    errors = validate_extension(uploaded.name)
-    sheets: dict[str, pd.DataFrame] = {}
+    raw = uploaded.getvalue()
 
-    if not errors:
+    # Same file already validated this session (e.g. a filter change reran the
+    # page) — reuse the stored sheets instead of re-reading a possibly-45MB file.
+    already_validated = (
+        st.session_state.get("file_bytes") == raw and "sheets" in st.session_state
+    )
+
+    errors = [] if already_validated else validate_extension(uploaded.name)
+    sheets: dict[str, pd.DataFrame] = st.session_state.get("sheets", {}) if already_validated else {}
+
+    if not errors and not already_validated:
         with st.spinner("Reading the file..."):
             try:
-                sheets = read_workbook(uploaded.getvalue())
+                sheets = read_workbook(raw)
             except Exception:
                 errors = [
                     "The file could not be read as xlsx — it may be corrupted "
@@ -143,7 +156,7 @@ def render_home() -> None:
         return
 
     total_rows = sum(len(df) for df in sheets.values())
-    st.session_state["file_bytes"] = uploaded.getvalue()
+    st.session_state["file_bytes"] = raw
     st.session_state["sheets"] = sheets
     st.session_state["valid_file"] = {
         "name": uploaded.name,
@@ -151,8 +164,22 @@ def render_home() -> None:
         "sheets": len(sheets),
     }
 
-    st.success(f"✅ **{uploaded.name}** validated successfully — your report is ready.")
+    # First run with a new file: the sidebar (already drawn) still shows the old
+    # status — rerun once so it updates. The rerun is cheap: already_validated
+    # short-circuits the re-read above.
+    if not already_validated:
+        st.rerun()
 
+    _render_loaded_summary(
+        f"✅ **{uploaded.name}** validated successfully — your report is ready.", sheets
+    )
+
+
+def _render_loaded_summary(message: str, sheets: dict[str, pd.DataFrame]) -> None:
+    """Success message + file metrics + first-rows peek for a loaded file."""
+    st.success(message)
+
+    total_rows = sum(len(df) for df in sheets.values())
     m1, m2, m3 = st.columns(3)
     m1.metric("Rows of sales data", f"{total_rows:,}")
     m2.metric("Period covered", _period_covered(sheets))
@@ -199,7 +226,8 @@ def _period_covered(sheets: dict[str, pd.DataFrame]) -> str:
         ).dropna()
         if dates.empty:
             return "—"
-        return f"{dates.min():%b %Y} – {dates.max():%b %Y}"
+        # Short year ('Dec 09') — the full form clips inside st.metric at 3 columns
+        return f"{dates.min():%b %y} – {dates.max():%b %y}"
     except Exception:
         return "—"
 

@@ -91,12 +91,20 @@ def load_and_clean(file_bytes: bytes):
     errors = []
     log = []
 
-    # Read all sheets using calamine engine for speed
-    try:
-        sheet_dict = pd.read_excel(io.BytesIO(file_bytes), sheet_name=None, engine="calamine")
-    except Exception as e:
-        errors.append(f"Error reading Excel file: {e}")
-        return pd.DataFrame(), pd.DataFrame(), log, errors
+    # The validation step already parsed this exact file — reuse its sheets
+    # instead of paying a second full read of a possibly-45MB workbook.
+    if (
+        st.session_state.get("file_bytes") == file_bytes
+        and "sheets" in st.session_state
+    ):
+        sheet_dict = st.session_state["sheets"]
+    else:
+        # Read all sheets using calamine engine for speed
+        try:
+            sheet_dict = pd.read_excel(io.BytesIO(file_bytes), sheet_name=None, engine="calamine")
+        except Exception as e:
+            errors.append(f"Error reading Excel file: {e}")
+            return pd.DataFrame(), pd.DataFrame(), log, errors
 
     # Combine all sheets into a single DataFrame
     df_raw = pd.concat(sheet_dict.values(), ignore_index=True)

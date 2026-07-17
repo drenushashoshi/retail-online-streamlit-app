@@ -17,6 +17,7 @@ import streamlit as st
 
 from pipeline.clean import load_and_clean
 from slides import slide_engines, slide_leaks, slide_pulse
+from ui.filters import render_filters
 from ui.kpis import render_kpis
 from ui.sidebar import render_sidebar
 from ui.theme import ACCENTS, inject_css
@@ -65,6 +66,7 @@ def _render_slide_page(key: str) -> None:
 
     try:
         df_sales, df_returns, log, errors = load_and_clean(st.session_state["file_bytes"])
+        df_sales, df_returns = render_filters(df_sales, df_returns)
         render((df_sales, df_returns))
     except NotImplementedError as todo:
         st.markdown(
@@ -84,7 +86,8 @@ if page == "home":
     # P2's KPI row — shown once a valid file is loaded
     if "file_bytes" in st.session_state:
         try:
-            df_sales, _, _, _ = load_and_clean(st.session_state["file_bytes"])
+            df_sales, df_returns, log, _ = load_and_clean(st.session_state["file_bytes"])
+            df_sales, df_returns = render_filters(df_sales, df_returns)
             st.divider()
             render_kpis(df_sales)
         except NotImplementedError:
