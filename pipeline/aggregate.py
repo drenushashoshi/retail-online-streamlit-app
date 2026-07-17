@@ -155,11 +155,4 @@ def concentration(df: pd.DataFrame) -> dict:
     top_5_rev = order_revenue.head(top_5_count).sum()
     pct = (top_5_rev / total_rev) * 100
 
-    return {
-        "percentage": pct,
-        "revenue_share_pct": pct,
-        "top_5_pct_revenue_share": pct,
-        "share": pct,
-        "top_5_pct_orders_share": pct,
-        "top_order_count": top_5_count  # Added to make the slide text more concrete
-    }
+    return {"percentage": pct, "top_order_count": top_5_count}

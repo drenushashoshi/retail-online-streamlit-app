@@ -17,6 +17,7 @@ import streamlit as st
 
 from pipeline.clean import load_and_clean
 from slides import slide_engines, slide_leaks, slide_pulse
+from ui.kpis import render_kpis
 from ui.sidebar import render_sidebar
 from ui.theme import ACCENTS, inject_css
 from ui.welcome import render_home
@@ -80,5 +81,13 @@ page = render_sidebar()
 
 if page == "home":
     render_home()
+    # P2's KPI row — shown once a valid file is loaded
+    if "file_bytes" in st.session_state:
+        try:
+            df_sales, _, _, _ = load_and_clean(st.session_state["file_bytes"])
+            st.divider()
+            render_kpis(df_sales)
+        except NotImplementedError:
+            pass  # pipeline not complete yet — KPIs appear when it is
 else:
     _render_slide_page(page)
